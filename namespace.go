@@ -117,11 +117,15 @@ func main() {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	fmt.Printf("starting current process %d\n", os.Getpid())
 
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
 		fmt.Println("error", err)
 		os.Exit(1)
 	}
+	fmt.Printf("starting current process %d\n", cmd.Process.Pid)
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("starting current process %s\n", err)
+	}
+
 	fmt.Printf("command ended\n")
 }
