@@ -45,7 +45,7 @@ func namespace_init() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	
+
 	// mount proc
 	fmt.Printf("mouting proc\n")
 	if err := syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
@@ -100,11 +100,40 @@ func setup_self_command(args ...string) *exec.Cmd {
 	}
 }
 
+//create a veth pair
+func create_veth() {
+	fmt.Printf("creating veth pair\n")
+	cmd := exec.Command("/sbin/ip", "link", "add", "xeth0", "type", "veth", "peer", "name", "xeth1")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("error creating veth %s\n", err)
+	}
+}
+func setup_veth(pid int) {
+	fmt.Printf("moving xeth1 to process network namespace\n")
+	cmd := exec.Command("/sbin/ip", "link", "set", "xeth1", "netns", fmt.Sprintf("%v", pid))
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("error moving veth %s\n", err)
+	}
+
+	fmt.Printf("set up xeth0 ip\n")
+	cmd = exec.Command("/sbin/ifconfig", "xeth0", "192.168.8.2/24", "up")
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("error settingup xeth0 ip: %s\n", err)
+	}
+
+}
+
 func main() {
 	/*
-	This command is run after script started up with proper namespace setup done
-	Since it is the script itself, it will call a pre registered namespace_init after
-	start up, sets up the necessary steps before the shell starts up
+		This command is run after script started up with proper namespace setup done
+		Since it is the script itself, it will call a pre registered namespace_init after
+		start up, sets up the necessary steps before the shell starts up
 	*/
 
 	cmd := setup_self_command(name)
@@ -122,10 +151,12 @@ func main() {
 		fmt.Println("error", err)
 		os.Exit(1)
 	}
+	create_veth()
+	setup_veth(cmd.Process.Pid)
 	fmt.Printf("starting current process %d\n", cmd.Process.Pid)
+
 	if err := cmd.Wait(); err != nil {
 		fmt.Printf("starting current process %s\n", err)
 	}
-
 	fmt.Printf("command ended\n")
 }
