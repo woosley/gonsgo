@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
 var registered = make(map[string]func())
@@ -52,6 +54,8 @@ func namespace_init() {
 		fmt.Println(err)
 	}
 
+	wait_network()
+	set_xeth1()
 	container_command()
 }
 
@@ -127,6 +131,29 @@ func setup_veth(pid int) {
 		fmt.Printf("error settingup xeth0 ip: %s\n", err)
 	}
 
+}
+
+//wait for network to startup
+func wait_network() error {
+	for i := 0; i < 10; i++ {
+		interfaces, err := net.Interfaces()
+		if err != nil {
+			return err
+		}
+		if len(interfaces) > 1 {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return nil
+}
+
+func set_xeth1() {
+	fmt.Printf("set up xeth1 ip\n")
+	cmd := exec.Command("/sbin/ifconfig", "xeth1", "192.168.8.3/24", "up")
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("error settingup xeth3 ip: %s\n", err)
+	}
 }
 
 func main() {
