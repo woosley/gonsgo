@@ -29,21 +29,24 @@ func init() {
 }
 
 func namespace_init() {
-
 	fmt.Printf("setup hostname as container1\n")
 	if err := syscall.Sethostname([]byte("container1")); err != nil {
 		fmt.Println(err)
 	}
 
 	defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
+	// make mounted / private, see http://woosley.github.io/2017/08/18/mount-namespace-in-golang.html
 	if err := syscall.Mount("", "/", "", uintptr(defaultMountFlags|syscall.MS_PRIVATE|syscall.MS_REC), ""); err != nil {
 		fmt.Println(err)
 	}
 
+	// privotroot, assuming you have a working rootfs, try rootfs.sh to create one
 	err := privotRoot("/vagrant/abc")
 	if err != nil {
 		fmt.Println(err)
 	}
+	
+	// mount proc
 	fmt.Printf("mouting proc\n")
 	if err := syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
 		fmt.Println(err)
@@ -78,6 +81,8 @@ func privotRoot(newroot string) error {
 func container_command() {
 
 	fmt.Printf("starting container command %s\n", shell)
+	// call exec, instead of cmd.Run, so current command is replaced by shell
+	// in this way, the shell pid is 1
 	cmd, _ := exec.LookPath(shell)
 	err := syscall.Exec(cmd, []string{}, os.Environ())
 	if err != nil {
@@ -96,6 +101,12 @@ func setup_self_command(args ...string) *exec.Cmd {
 }
 
 func main() {
+	/*
+	This command is run after script started up with proper namespace setup done
+	Since it is the script itself, it will call a pre registered namespace_init after
+	start up, sets up the necessary steps before the shell starts up
+	*/
+
 	cmd := setup_self_command(name)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWNS |
