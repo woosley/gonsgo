@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
@@ -41,7 +42,6 @@ func namespace_init() {
 	if err := syscall.Mount("", "/", "", uintptr(defaultMountFlags|syscall.MS_PRIVATE|syscall.MS_REC), ""); err != nil {
 		fmt.Println(err)
 	}
-
 	// privotroot, assuming you have a working rootfs, try rootfs.sh to create one
 	err := privotRoot("/vagrant/abc")
 	if err != nil {
@@ -148,6 +148,14 @@ func wait_network() error {
 	return nil
 }
 
+func setup_uid_mapping(pid int) {
+	str := []byte("1000 0 1")
+	err := ioutil.WriteFile(fmt.Sprintf("/proc/%v/uid_map", pid), str, 0644)
+	if err != nil {
+		fmt.Printf("error writing file: %s\n", err)
+	}
+}
+
 func set_xeth1() {
 	fmt.Printf("set up xeth1 ip\n")
 	cmd := exec.Command("/sbin/ifconfig", "xeth1", "192.168.8.3/24", "up")
@@ -169,6 +177,7 @@ func main() {
 			syscall.CLONE_NEWUTS |
 			syscall.CLONE_NEWPID |
 			syscall.CLONE_NEWIPC |
+			syscall.CLONE_NEWUSER |
 			syscall.CLONE_NEWNET}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
