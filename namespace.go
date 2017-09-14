@@ -178,7 +178,22 @@ func main() {
 			syscall.CLONE_NEWPID |
 			syscall.CLONE_NEWIPC |
 			syscall.CLONE_NEWUSER |
-			syscall.CLONE_NEWNET}
+			syscall.CLONE_NEWNET,
+		UidMappings: []syscall.SysProcIDMap{
+			{
+				ContainerID: 0,
+				HostID:      0,
+				Size:        1,
+			},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{
+				ContainerID: 0,
+				HostID:      0,
+				Size:        1,
+			},
+		},
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
