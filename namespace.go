@@ -21,7 +21,7 @@ func init() {
 	//register a function in memory
 	log.SetOutput(os.Stdout)
 	log.SetLevel(log.DebugLevel)
-	log.Info(fmt.Sprintf("register %s", name))
+	log.WithFields(log.Fields{"name": name}).Info("register name ")
 	if _, exists := registered[name]; exists {
 		panic(fmt.Sprintf("name already registered: %p", name))
 	}
@@ -35,27 +35,28 @@ func init() {
 }
 
 func namespace_init() {
-	log.Info(fmt.Sprintf("setup hostname as container1"))
+	hostname := "container1"
+	log.WithFields(log.Fields{"hostname": hostname}).Info(fmt.Sprintf("setup hostname"))
 	if err := syscall.Sethostname([]byte("container1")); err != nil {
-		log.Error(err)
+		log.WithFields(log.Fields{"error": err}).Error(err)
 	}
 
 	defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
 	// make mounted / private, see http://woosley.github.io/2017/08/18/mount-namespace-in-golang.html
 	if err := syscall.Mount("", "/", "", uintptr(defaultMountFlags|syscall.MS_PRIVATE|syscall.MS_REC), ""); err != nil {
-		log.Error(fmt.Sprintf("Error makeing / private: ", err))
+		log.WithFields(log.Fields{"error": err}).Error("Error makeing / private")
 	}
 
 	// privotroot, assuming you have a working rootfs, try rootfs.sh to create
 	// one on Centos
 	if err := privotRoot("/vagrant/abc"); err != nil {
-		log.Error(fmt.Sprintf("Error when privot root: %s", err))
+		log.WithFields(log.Fields{"error": err}).Error("Error when privot root")
 	}
 
 	// mount proc
 	log.Info("mounting proc")
 	if err := syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
-		log.Error(fmt.Sprintf("Error mounting proc: %s", err))
+		log.WithFields(log.Fields{"error": err}).Error("Error mounting proc")
 	}
 	wait_network()
 	set_xeth1()
@@ -86,12 +87,12 @@ func privotRoot(newroot string) error {
 
 func container_command() {
 
-	log.Info(fmt.Sprintf("starting container command: %s", shell))
+	log.WithFields(log.Fields{"command": shell}).Info("starting container command")
 	// call exec, instead of cmd.Run, so current command is replaced by shell
 	// in this way, the shell pid is 1
 	cmd, _ := exec.LookPath(shell)
 	if err := syscall.Exec(cmd, []string{}, os.Environ()); err != nil {
-		log.Error(fmt.Sprintf("error exec command: %s", err))
+		log.WithFields(log.Fields{"error": err}).Error("error exec command")
 	}
 }
 
@@ -113,23 +114,29 @@ func create_veth() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		log.Error(fmt.Sprintf("error creating veth %s", err))
+		log.WithFields(log.Fields{"error": err}).Error("error creating veth")
 	}
 }
 func setup_veth(pid int) {
-	log.Info("moving xeth1 to process network namespace")
+	log.WithFields(log.Fields{"interface": "xeth1"}).Info("moving interface to process network namespace")
 	cmd := exec.Command("/sbin/ip", "link", "set", "xeth1", "netns", fmt.Sprintf("%v", pid))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		log.Error(fmt.Sprintf("error moving veth %s", err))
+		log.WithFields(log.Fields{
+			"error":     err,
+			"interface": "xeth1",
+		}).Error("error moving interface to namespace")
 	}
 
-	log.Info("set up xeth0 ip")
+	log.WithFields(log.Fields{"interface": "xeth0"}).Info("set up interface ip")
 	cmd = exec.Command("/sbin/ifconfig", "xeth0", "192.168.8.2/24", "up")
 	if err := cmd.Run(); err != nil {
-		log.Error(fmt.Sprintf("error settingup xeth0 ip: %s", err))
+		log.WithFields(log.Fields{
+			"error":     err,
+			"interface": "xeth0",
+		}).Error("error setting up interface ip")
 	}
 
 }
@@ -153,15 +160,15 @@ func setup_uid_mapping(pid int) {
 	str := []byte("1000 0 1")
 	err := ioutil.WriteFile(fmt.Sprintf("/proc/%v/uid_map", pid), str, 0644)
 	if err != nil {
-		log.Error(fmt.Sprintf("error writing file: %s", err))
+		log.WithFields(log.Fields{"error": err}).Error("error writing file")
 	}
 }
 
 func set_xeth1() {
-	log.Info("set up xeth1 ip")
+	log.WithFields(log.Fields{"interface": "xeth1"}).Info("set up interface ip")
 	cmd := exec.Command("/sbin/ifconfig", "xeth1", "192.168.8.3/24", "up")
 	if err := cmd.Run(); err != nil {
-		log.Error(fmt.Sprintf("error settingup xeth3 ip: %s", err))
+		log.WithFields(log.Fields{"error": err}).Error("error settingup xeth3 ip")
 	}
 }
 
@@ -200,15 +207,15 @@ func main() {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		log.Error(fmt.Sprintf("error", err))
+		log.WithFields(log.Fields{"error": err}).Error("error start command")
 		os.Exit(1)
 	}
 	create_veth()
 	setup_veth(cmd.Process.Pid)
-	log.Info(fmt.Sprintf("starting current process %d", cmd.Process.Pid))
+	log.WithFields(log.Fields{"pid": cmd.Process.Pid}).Info("starting current process")
 
 	if err := cmd.Wait(); err != nil {
-		log.Error(fmt.Sprintf("starting current process %s\n", err))
+		log.WithFields(log.Fields{"error": err}).Error("starting current process")
 
 	}
 	log.Info("command ended")
