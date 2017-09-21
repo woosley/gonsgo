@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net"
 	"os"
@@ -18,7 +19,9 @@ var shell string = "/bin/bash"
 
 func init() {
 	//register a function in memory
-	fmt.Printf("register %s \n", name)
+	log.SetOutput(os.Stdout)
+	log.SetLevel(log.DebugLevel)
+	log.Info(fmt.Sprintf("register %s", name))
 	if _, exists := registered[name]; exists {
 		panic(fmt.Sprintf("name already registered: %p", name))
 	}
@@ -32,37 +35,36 @@ func init() {
 }
 
 func namespace_init() {
-	fmt.Printf("setup hostname as container1\n")
+	log.Info(fmt.Sprintf("setup hostname as container1"))
 	if err := syscall.Sethostname([]byte("container1")); err != nil {
-		fmt.Println(err)
+		log.Error(err)
 	}
 
 	defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
 	// make mounted / private, see http://woosley.github.io/2017/08/18/mount-namespace-in-golang.html
 	if err := syscall.Mount("", "/", "", uintptr(defaultMountFlags|syscall.MS_PRIVATE|syscall.MS_REC), ""); err != nil {
-		fmt.Println(err)
+		log.Error(fmt.Sprintf("Error makeing / private: ", err))
 	}
-	// privotroot, assuming you have a working rootfs, try rootfs.sh to create one
-	err := privotRoot("/vagrant/abc")
-	if err != nil {
-		fmt.Println(err)
+
+	// privotroot, assuming you have a working rootfs, try rootfs.sh to create
+	// one on Centos
+	if err := privotRoot("/vagrant/abc"); err != nil {
+		log.Error(fmt.Sprintf("Error when privot root: %s", err))
 	}
 
 	// mount proc
-	fmt.Printf("mouting proc\n")
+	log.Info("mounting proc")
 	if err := syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
-		fmt.Println(err)
+		log.Error(fmt.Sprintf("Error mounting proc: %s", err))
 	}
-
 	wait_network()
 	set_xeth1()
 	container_command()
 }
 
-// /vagrant/abc
 func privotRoot(newroot string) error {
 
-	fmt.Printf("start to pivotRoot\n")
+	log.Info("start to pivotRoot")
 	putold := filepath.Join(newroot, "/.pivot_root")
 	if err := os.MkdirAll(putold, 0700); err != nil {
 		return err
@@ -84,13 +86,12 @@ func privotRoot(newroot string) error {
 
 func container_command() {
 
-	fmt.Printf("starting container command %s\n", shell)
+	log.Info(fmt.Sprintf("starting container command: %s", shell))
 	// call exec, instead of cmd.Run, so current command is replaced by shell
 	// in this way, the shell pid is 1
 	cmd, _ := exec.LookPath(shell)
-	err := syscall.Exec(cmd, []string{}, os.Environ())
-	if err != nil {
-		fmt.Println("error", err)
+	if err := syscall.Exec(cmd, []string{}, os.Environ()); err != nil {
+		log.Error(fmt.Sprintf("error exec command: %s", err))
 	}
 }
 
@@ -106,29 +107,29 @@ func setup_self_command(args ...string) *exec.Cmd {
 
 //create a veth pair
 func create_veth() {
-	fmt.Printf("creating veth pair\n")
+	log.Info("creating veth pair")
 	cmd := exec.Command("/sbin/ip", "link", "add", "xeth0", "type", "veth", "peer", "name", "xeth1")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("error creating veth %s\n", err)
+		log.Error(fmt.Sprintf("error creating veth %s", err))
 	}
 }
 func setup_veth(pid int) {
-	fmt.Printf("moving xeth1 to process network namespace\n")
+	log.Info("moving xeth1 to process network namespace")
 	cmd := exec.Command("/sbin/ip", "link", "set", "xeth1", "netns", fmt.Sprintf("%v", pid))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("error moving veth %s\n", err)
+		log.Error(fmt.Sprintf("error moving veth %s", err))
 	}
 
-	fmt.Printf("set up xeth0 ip\n")
+	log.Info("set up xeth0 ip")
 	cmd = exec.Command("/sbin/ifconfig", "xeth0", "192.168.8.2/24", "up")
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("error settingup xeth0 ip: %s\n", err)
+		log.Error(fmt.Sprintf("error settingup xeth0 ip: %s", err))
 	}
 
 }
@@ -152,15 +153,15 @@ func setup_uid_mapping(pid int) {
 	str := []byte("1000 0 1")
 	err := ioutil.WriteFile(fmt.Sprintf("/proc/%v/uid_map", pid), str, 0644)
 	if err != nil {
-		fmt.Printf("error writing file: %s\n", err)
+		log.Error(fmt.Sprintf("error writing file: %s", err))
 	}
 }
 
 func set_xeth1() {
-	fmt.Printf("set up xeth1 ip\n")
+	log.Info("set up xeth1 ip")
 	cmd := exec.Command("/sbin/ifconfig", "xeth1", "192.168.8.3/24", "up")
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("error settingup xeth3 ip: %s\n", err)
+		log.Error(fmt.Sprintf("error settingup xeth3 ip: %s", err))
 	}
 }
 
@@ -199,15 +200,16 @@ func main() {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		fmt.Println("error", err)
+		log.Error(fmt.Sprintf("error", err))
 		os.Exit(1)
 	}
 	create_veth()
 	setup_veth(cmd.Process.Pid)
-	fmt.Printf("starting current process %d\n", cmd.Process.Pid)
+	log.Info(fmt.Sprintf("starting current process %d", cmd.Process.Pid))
 
 	if err := cmd.Wait(); err != nil {
-		fmt.Printf("starting current process %s\n", err)
+		log.Error(fmt.Sprintf("starting current process %s\n", err))
+
 	}
-	fmt.Printf("command ended\n")
+	log.Info("command ended")
 }
