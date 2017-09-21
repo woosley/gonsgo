@@ -8,4 +8,4 @@ sample code to play with Namespace and Cgroup in golang
 
 # screenshot
 
-![png](https://raw.githubusercontent.com/woosley/GoNSGo/master/screenshot.PNG)
+![gif](https://raw.githubusercontent.com/woosley/GoNSGo/master/screenshot.gif)
