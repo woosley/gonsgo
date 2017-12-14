@@ -111,7 +111,7 @@ func container_command() {
 		}
 	}
 	log.WithFields(log.Fields{"command": command}).Info("starting container command")
-	if err := syscall.Exec(command, os.Args[2:], os.Environ()); err != nil {
+	if err := syscall.Exec(command, os.Args[1:], os.Environ()); err != nil {
 		exitWithError(err, "error exec command")
 	}
 }
