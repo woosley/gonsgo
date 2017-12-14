@@ -117,7 +117,7 @@ func setup_self_command(args ...string) *exec.Cmd {
 //create a veth pair
 func create_veth() {
 	log.Info("creating veth pair")
-	cmd := exec.Command("/sbin/ip", "link", "add", "xeth0", "type", "veth", "peer", "name", "xeth1")
+	cmd := exec.Command("sudo", "/sbin/ip", "link", "add", "xeth0", "type", "veth", "peer", "name", "xeth1")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -127,7 +127,7 @@ func create_veth() {
 }
 func setup_veth(pid int) {
 	log.WithFields(log.Fields{"interface": "xeth1"}).Info("moving interface to process network namespace")
-	cmd := exec.Command("/sbin/ip", "link", "set", "xeth1", "netns", fmt.Sprintf("%v", pid))
+	cmd := exec.Command("sudo", "/sbin/ip", "link", "set", "xeth1", "netns", fmt.Sprintf("%v", pid))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -139,7 +139,7 @@ func setup_veth(pid int) {
 	}
 
 	log.WithFields(log.Fields{"interface": "xeth0"}).Info("set up interface ip")
-	cmd = exec.Command("/sbin/ifconfig", "xeth0", "192.168.8.2/24", "up")
+	cmd = exec.Command("sudo", "/sbin/ifconfig", "xeth0", "192.168.8.2/24", "up")
 	if err := cmd.Run(); err != nil {
 		log.WithFields(log.Fields{
 			"error":     err,
@@ -198,14 +198,14 @@ func main() {
 		UidMappings: []syscall.SysProcIDMap{
 			{
 				ContainerID: 0,
-				HostID:      0,
+				HostID:      os.Getuid(),
 				Size:        1,
 			},
 		},
 		GidMappings: []syscall.SysProcIDMap{
 			{
 				ContainerID: 0,
-				HostID:      0,
+				HostID:      os.Getgid(),
 				Size:        1,
 			},
 		},
