@@ -16,6 +16,7 @@ var name = "namespace_init"
 var self = "/proc/self/exe"
 var shell string = "/bin/bash"
 var mountPoint = "/vagrant/abc"
+var hostname = "gonsgo"
 
 func init() {
 	//register a function in memory
@@ -39,9 +40,8 @@ func exitWithError(err error, s string) {
 }
 
 func namespace_init() {
-	hostname := "container1"
 	log.WithFields(log.Fields{"hostname": hostname}).Info(fmt.Sprintf("setup hostname"))
-	if err := syscall.Sethostname([]byte("container1")); err != nil {
+	if err := syscall.Sethostname([]byte(hostname)); err != nil {
 		exitWithError(err, fmt.Sprintf("%s", err))
 	}
 
@@ -96,12 +96,22 @@ func pivotRoot(newroot string) error {
 }
 
 func container_command() {
-
-	log.WithFields(log.Fields{"command": shell}).Info("starting container command")
 	// call exec, instead of cmd.Run, so current command is replaced by shell
 	// in this way, the shell pid is 1
-	cmd, _ := exec.LookPath(shell)
-	if err := syscall.Exec(cmd, []string{}, os.Environ()); err != nil {
+	var err error
+	var command string
+	if len(os.Args) == 1 {
+		log.Info(fmt.Sprintf("no command to be run passed, set command to %s ", shell))
+		command, err = exec.LookPath(shell)
+		os.Args = append(os.Args, command)
+	} else {
+		command, err = exec.LookPath(os.Args[1])
+		if err != nil {
+			exitWithError(err, fmt.Sprintf("can not find command %s", os.Args[1]))
+		}
+	}
+	log.WithFields(log.Fields{"command": command}).Info("starting container command")
+	if err := syscall.Exec(command, os.Args[2:], os.Environ()); err != nil {
 		exitWithError(err, "error exec command")
 	}
 }
@@ -180,7 +190,8 @@ func main() {
 		start up, sets up the necessary steps before the shell starts up
 	*/
 
-	cmd := setup_self_command(name)
+	os.Args[0] = name
+	cmd := setup_self_command(os.Args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWNS |
 			syscall.CLONE_NEWUTS |
@@ -207,6 +218,7 @@ func main() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	log.Info("run myself ...")
 	if err := cmd.Start(); err != nil {
 		log.WithFields(log.Fields{"error": err}).Error("error start command")
 		os.Exit(1)
