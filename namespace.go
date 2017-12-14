@@ -42,9 +42,16 @@ func namespace_init() {
 	}
 
 	defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
+
 	// make mounted / private, see http://woosley.github.io/2017/08/18/mount-namespace-in-golang.html
 	if err := syscall.Mount("", "/", "", uintptr(defaultMountFlags|syscall.MS_PRIVATE|syscall.MS_REC), ""); err != nil {
 		log.WithFields(log.Fields{"error": err}).Error("Error makeing / private")
+	}
+
+	// mount proc, this has to be done before pivot_root, or you will get permission denied with user namepsace anbled
+	log.Info("mounting proc")
+	if err := syscall.Mount("proc", "/vagrant/abc/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
+		log.WithFields(log.Fields{"error": err}).Error("Error mounting proc")
 	}
 
 	// privotroot, assuming you have a working rootfs, try rootfs.sh to create
@@ -53,11 +60,6 @@ func namespace_init() {
 		log.WithFields(log.Fields{"error": err}).Error("Error when privot root")
 	}
 
-	// mount proc
-	log.Info("mounting proc")
-	if err := syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("Error mounting proc")
-	}
 	wait_network()
 	set_xeth1()
 	container_command()
@@ -71,6 +73,12 @@ func privotRoot(newroot string) error {
 		return err
 	}
 
+	// I don;t really know why I need this
+	if err := syscall.Mount(newroot, newroot, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
+		return err
+	}
+
+	log.Info(fmt.Sprintf("new: %s old: %s", newroot, putold))
 	if err := syscall.PivotRoot(newroot, putold); err != nil {
 		return err
 	}
