@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
@@ -16,6 +15,7 @@ var registered = make(map[string]func())
 var name = "namespace_init"
 var self = "/proc/self/exe"
 var shell string = "/bin/bash"
+var mountPoint = "/vagrant/abc"
 
 func init() {
 	//register a function in memory
@@ -26,7 +26,6 @@ func init() {
 		panic(fmt.Sprintf("name already registered: %p", name))
 	}
 	registered[name] = namespace_init
-
 	initializer, exists := registered[os.Args[0]]
 	if exists {
 		initializer()
@@ -34,30 +33,35 @@ func init() {
 	}
 }
 
+func exitWithError(err error, s string) {
+	log.WithFields(log.Fields{"error": err}).Error(s)
+	os.Exit(1)
+}
+
 func namespace_init() {
 	hostname := "container1"
 	log.WithFields(log.Fields{"hostname": hostname}).Info(fmt.Sprintf("setup hostname"))
 	if err := syscall.Sethostname([]byte("container1")); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error(err)
+		exitWithError(err, fmt.Sprintf("%s", err))
 	}
 
 	defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
 
 	// make mounted / private, see http://woosley.github.io/2017/08/18/mount-namespace-in-golang.html
 	if err := syscall.Mount("", "/", "", uintptr(defaultMountFlags|syscall.MS_PRIVATE|syscall.MS_REC), ""); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("Error makeing / private")
+		exitWithError(err, "Error making / private")
 	}
 
 	// mount proc, this has to be done before pivot_root, or you will get permission denied with user namepsace anbled
-	log.Info("mounting proc")
-	if err := syscall.Mount("proc", "/vagrant/abc/proc", "proc", uintptr(defaultMountFlags), ""); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("Error mounting proc")
+	log.Info(fmt.Sprintf("mounting proc for %s", mountPoint))
+	if err := syscall.Mount("proc", fmt.Sprintf("%s/proc", mountPoint), "proc", uintptr(defaultMountFlags), ""); err != nil {
+		exitWithError(err, "Error mounting proc")
 	}
 
-	// privotroot, assuming you have a working rootfs, try rootfs.sh to create
-	// one on Centos
-	if err := privotRoot("/vagrant/abc"); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("Error when privot root")
+	// pivotroot, assuming you have a working rootfs, try rootfs.sh to create one on Centos
+	log.Info("start to pivotRoot")
+	if err := pivotRoot(mountPoint); err != nil {
+		exitWithError(err, fmt.Sprintf("Error when pivotRoot to %s", mountPoint))
 	}
 
 	wait_network()
@@ -65,20 +69,18 @@ func namespace_init() {
 	container_command()
 }
 
-func privotRoot(newroot string) error {
+func pivotRoot(newroot string) error {
 
-	log.Info("start to pivotRoot")
 	putold := filepath.Join(newroot, "/.pivot_root")
 	if err := os.MkdirAll(putold, 0700); err != nil {
 		return err
 	}
 
-	// I don;t really know why I need this
+	// this line, is needed on Ubuntu, but not on Centos. I am very not sure why
 	if err := syscall.Mount(newroot, newroot, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 		return err
 	}
 
-	log.Info(fmt.Sprintf("new: %s old: %s", newroot, putold))
 	if err := syscall.PivotRoot(newroot, putold); err != nil {
 		return err
 	}
@@ -100,7 +102,7 @@ func container_command() {
 	// in this way, the shell pid is 1
 	cmd, _ := exec.LookPath(shell)
 	if err := syscall.Exec(cmd, []string{}, os.Environ()); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("error exec command")
+		exitWithError(err, "error exec command")
 	}
 }
 
@@ -116,17 +118,16 @@ func setup_self_command(args ...string) *exec.Cmd {
 
 //create a veth pair
 func create_veth() {
-	log.Info("creating veth pair")
 	cmd := exec.Command("sudo", "/sbin/ip", "link", "add", "xeth0", "type", "veth", "peer", "name", "xeth1")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("error creating veth")
+		exitWithError(err, "error creating veth")
 	}
 }
 func setup_veth(pid int) {
-	log.WithFields(log.Fields{"interface": "xeth1"}).Info("moving interface to process network namespace")
+	log.WithFields(log.Fields{"interface": "xeth1"}).Info("move xeth1 to process network namespace")
 	cmd := exec.Command("sudo", "/sbin/ip", "link", "set", "xeth1", "netns", fmt.Sprintf("%v", pid))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -138,7 +139,7 @@ func setup_veth(pid int) {
 		}).Error("error moving interface to namespace")
 	}
 
-	log.WithFields(log.Fields{"interface": "xeth0"}).Info("set up interface ip")
+	log.WithFields(log.Fields{"interface": "xeth0", "ip": "192.168.8.2"}).Info("set up interface ip address in host")
 	cmd = exec.Command("sudo", "/sbin/ifconfig", "xeth0", "192.168.8.2/24", "up")
 	if err := cmd.Run(); err != nil {
 		log.WithFields(log.Fields{
@@ -146,11 +147,11 @@ func setup_veth(pid int) {
 			"interface": "xeth0",
 		}).Error("error setting up interface ip")
 	}
-
 }
 
 //wait for network to startup
 func wait_network() error {
+	log.Info("wait network/interface setup to finish")
 	for i := 0; i < 10; i++ {
 		interfaces, err := net.Interfaces()
 		if err != nil {
@@ -164,19 +165,11 @@ func wait_network() error {
 	return nil
 }
 
-func setup_uid_mapping(pid int) {
-	str := []byte("1000 0 1")
-	err := ioutil.WriteFile(fmt.Sprintf("/proc/%v/uid_map", pid), str, 0644)
-	if err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("error writing file")
-	}
-}
-
 func set_xeth1() {
-	log.WithFields(log.Fields{"interface": "xeth1"}).Info("set up interface ip")
+	log.WithFields(log.Fields{"interface": "xeth1", "ip": "192.168.8.3"}).Info("set up interface ip in process namespace")
 	cmd := exec.Command("/sbin/ifconfig", "xeth1", "192.168.8.3/24", "up")
 	if err := cmd.Run(); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("error settingup xeth3 ip")
+		log.WithFields(log.Fields{"error": err}).Error("error settingup xeth1 ip")
 	}
 }
 
@@ -218,13 +211,14 @@ func main() {
 		log.WithFields(log.Fields{"error": err}).Error("error start command")
 		os.Exit(1)
 	}
+	log.Info("creating veth pair for host")
 	create_veth()
 	setup_veth(cmd.Process.Pid)
 	log.WithFields(log.Fields{"pid": cmd.Process.Pid}).Info("starting current process")
 
 	if err := cmd.Wait(); err != nil {
 		log.WithFields(log.Fields{"error": err}).Error("starting current process")
-
 	}
+
 	log.Info("command ended")
 }
