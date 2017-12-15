@@ -15,7 +15,7 @@ var registered = make(map[string]func())
 var name = "namespace_init"
 var self = "/proc/self/exe"
 var shell string = "/bin/bash"
-var mountPoint = "/vagrant/abc"
+var mountPoint = "/tmp/rootfs"
 var hostname = "gonsgo"
 
 func init() {

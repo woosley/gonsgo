@@ -1,6 +1,17 @@
 # GoNSGo
 Sample code to play with Namespace in golang. Tested on Ubuntu 16.04.3 and Centos 7.2
 
+# Rootfs image
+ 
+Download a Centos 6.9 rootfs image from [here](https://bitbucket.org/woosley/stuff/raw/e6182b1a25a0418303a087c1cbd57e9a99d56275/os.image.gz)
+
+then gunzip it and mount it to `/tmp/rootfs/` 
+
+```
+gunzip os.image.gz 
+mount os.image /tmp/rootf 
+```
+
 # run
 
 ```
