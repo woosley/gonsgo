@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 ROOTFS_ROOT="/opt/rootfs"
-ROOTFS_SIZE=3600000
+ROOTFS_SIZE=1000000
 IMAGE_NAME=os.image
 MOUNT_POINT=/opt/rootfsmount/
 RELEASE=http://centos.ustc.edu.cn/centos/6.9/os/x86_64/Packages/centos-release-6-9.el6.12.3.x86_64.rpm
@@ -22,12 +22,13 @@ mount_os() {
 
 rebuild_rpm() {
     mkdir -p $MOUNT_POINT/var/lib/rpm
-    rpm --rebuilddb --root=$MOUNT_POINT
-    rpm -ivh --root=$MOUNT_POINT --nodeps $RELEASE
-    yum $YUM_OPTS install yum findutils --nogpgcheck rpm
+    /bin/rpm --rebuilddb --root=$MOUNT_POINT
+    /bin/rpm -ivh --root=$MOUNT_POINT --nodeps $RELEASE
+    /usr/bin/yum $YUM_OPTS install yum findutils --nogpgcheck rpm
     cp /etc/resolv.conf $MOUNT_POINT/etc/
-    chroot $MOUNT_POINT rpm --rebuilddb
-    chroot $MOUNT_POINT yum -y groupinstall Base
+    chroot $MOUNT_POINT /bin/rpm --rebuilddb
+    chroot $MOUNT_POINT /usr/bin/yum -y groupinstall core
+    chroot $MOUNT_POINT /usr/bin/yum clean all
 }
 
 create_rootfs

@@ -220,17 +220,15 @@ func main() {
 
 	log.Info("run myself ...")
 	if err := cmd.Start(); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("error start command")
-		os.Exit(1)
+		exitWithError(err, "error start command")
 	}
-	log.Info("creating veth pair for host")
+	log.Info("create veth pair for host")
 	create_veth()
 	setup_veth(cmd.Process.Pid)
-	log.WithFields(log.Fields{"pid": cmd.Process.Pid}).Info("starting current process")
+	log.WithFields(log.Fields{"pid": cmd.Process.Pid}).Info("wait current process")
 
 	if err := cmd.Wait(); err != nil {
-		log.WithFields(log.Fields{"error": err}).Error("starting current process")
+		exitWithError(err, "error waiting current process")
 	}
-
 	log.Info("command ended")
 }
